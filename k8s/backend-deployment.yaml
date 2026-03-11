@@ -38,7 +38,13 @@ spec:
             - name: NODE_ENV
               value: "production"
             - name: INSTANA_ENABLED
-              value: "false"
+              value: "true"
+            - name: INSTANA_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: INSTANA_AGENT_PORT
+              value: "42699"
           ports:
             - containerPort: 4000
           resources:
