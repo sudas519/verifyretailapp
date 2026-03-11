@@ -37,6 +37,8 @@ spec:
               value: "super-secret-change-in-prod"
             - name: NODE_ENV
               value: "production"
+            - name: INSTANA_ENABLED
+              value: "false"
           ports:
             - containerPort: 4000
           resources:
