@@ -1,4 +1,16 @@
 // backend/src/server.js
+// CRITICAL: Instana collector MUST be the first require
+require('@instana/collector')({
+  tracing: {
+    enabled: true,
+    automaticTracingEnabled: true,
+    stackTraceLength: 10
+  },
+  metrics: {
+    transmissionDelay: 1000
+  }
+});
+
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
