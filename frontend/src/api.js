@@ -124,5 +124,13 @@ export async function getLoginTrend12h() {
   return res.data;
 }
 
+/* ---------------------
+    PRODUCT INSIGHTS (NEW)
+----------------------*/
+export async function getProductInsights(productId) {
+  const res = await api.get(`/products/${productId}/insights`);
+  return res.data;
+}
+
 export default api;
 

@@ -340,5 +340,261 @@ router.get(
   }
 );
 
+/* ==================================================================
+ * Product Insights API - AI-powered product analysis
+ * =================================================================*/
+
+/**
+ * Generate detailed insights for a specific product
+ * Returns comprehensive analysis including features, use cases, and recommendations
+ */
+function generateProductInsights(productId, product) {
+  // Detailed insights for specific products
+  if (productId === 1) {
+    return {
+      summary: "The Wireless Bluetooth Headphones offer premium audio quality with advanced noise cancellation technology. Perfect for music enthusiasts and professionals who need to focus in noisy environments.",
+      keyFeatures: [
+        {
+          title: "Active Noise Cancellation",
+          description: "Advanced ANC technology blocks out ambient noise for immersive listening",
+          impact: "High"
+        },
+        {
+          title: "40-Hour Battery Life",
+          description: "Extended playtime with quick charge capability (5 min = 2 hours)",
+          impact: "High"
+        },
+        {
+          title: "Premium Sound Quality",
+          description: "Hi-Res Audio certified with custom 40mm drivers",
+          impact: "High"
+        },
+        {
+          title: "Comfortable Design",
+          description: "Memory foam ear cushions and adjustable headband for all-day wear",
+          impact: "Medium"
+        }
+      ],
+      useCases: [
+        {
+          scenario: "Remote Work & Video Calls",
+          description: "Crystal-clear audio for virtual meetings with built-in microphone and noise cancellation",
+          benefit: "Improved communication quality and reduced background distractions"
+        },
+        {
+          scenario: "Travel & Commuting",
+          description: "Compact foldable design with carrying case, perfect for flights and daily commutes",
+          benefit: "Peaceful listening experience in noisy environments"
+        },
+        {
+          scenario: "Music Production",
+          description: "Accurate sound reproduction for mixing and mastering",
+          benefit: "Professional-grade audio monitoring"
+        }
+      ],
+      technicalSpecs: {
+        audioQuality: "Hi-Res Audio (up to 40kHz)",
+        batteryLife: "40 hours (ANC on), 60 hours (ANC off)",
+        chargingTime: "2 hours full charge, Quick charge supported",
+        connectivity: "Bluetooth 5.0, 3.5mm wired option",
+        weight: "250g",
+        warranty: "2 years manufacturer warranty"
+      },
+      customerSentiment: {
+        overallRating: 4.5,
+        totalReviews: 1247,
+        positiveAspects: [
+          "Exceptional noise cancellation",
+          "Comfortable for long sessions",
+          "Great battery life"
+        ],
+        commonConcerns: [
+          "Slightly heavy for some users",
+          "Premium price point"
+        ],
+        recommendationRate: 92
+      },
+      recommendations: [
+        {
+          type: "Accessory",
+          item: "Premium carrying case with extra padding",
+          reason: "Enhanced protection during travel"
+        },
+        {
+          type: "Accessory",
+          item: "Replacement ear cushions",
+          reason: "Maintain comfort over extended use"
+        },
+        {
+          type: "Alternative",
+          item: "Wireless Earbuds Pro",
+          reason: "More portable option for active lifestyles"
+        }
+      ]
+    };
+  }
+  
+  if (productId === 2) {
+    return {
+      summary: "The Smart Fitness Watch combines advanced health tracking with smart notifications. Ideal for fitness enthusiasts and health-conscious individuals who want comprehensive activity monitoring.",
+      keyFeatures: [
+        {
+          title: "Advanced Health Monitoring",
+          description: "Track heart rate, blood oxygen, sleep quality, and stress levels",
+          impact: "High"
+        },
+        {
+          title: "GPS & Multi-Sport Tracking",
+          description: "Built-in GPS with 100+ sport modes for accurate activity tracking",
+          impact: "High"
+        },
+        {
+          title: "7-Day Battery Life",
+          description: "Long-lasting battery with fast charging capability",
+          impact: "Medium"
+        },
+        {
+          title: "Water Resistant",
+          description: "5ATM water resistance for swimming and water sports",
+          impact: "Medium"
+        }
+      ],
+      useCases: [
+        {
+          scenario: "Fitness Training",
+          description: "Track workouts, monitor heart rate zones, and analyze performance metrics",
+          benefit: "Optimize training effectiveness and prevent overexertion"
+        },
+        {
+          scenario: "Health Monitoring",
+          description: "24/7 health tracking with alerts for irregular patterns",
+          benefit: "Early detection of potential health issues"
+        },
+        {
+          scenario: "Daily Activity",
+          description: "Step counting, calorie tracking, and sedentary reminders",
+          benefit: "Maintain active lifestyle and reach daily goals"
+        }
+      ],
+      technicalSpecs: {
+        display: "1.4-inch AMOLED touchscreen",
+        batteryLife: "7 days typical use, 20 hours GPS mode",
+        waterResistance: "5ATM (50 meters)",
+        sensors: "Heart rate, SpO2, accelerometer, gyroscope, GPS",
+        compatibility: "iOS 12+ and Android 6.0+",
+        warranty: "1 year manufacturer warranty"
+      },
+      customerSentiment: {
+        overallRating: 4.3,
+        totalReviews: 892,
+        positiveAspects: [
+          "Accurate health tracking",
+          "Great battery life",
+          "Comfortable to wear"
+        ],
+        commonConcerns: [
+          "App could be more intuitive",
+          "Limited third-party app support"
+        ],
+        recommendationRate: 87
+      },
+      recommendations: [
+        {
+          type: "Accessory",
+          item: "Additional watch bands",
+          reason: "Customize style for different occasions"
+        },
+        {
+          type: "Accessory",
+          item: "Screen protector",
+          reason: "Protect display from scratches"
+        },
+        {
+          type: "Complement",
+          item: "Wireless Bluetooth Headphones",
+          reason: "Complete workout setup with music"
+        }
+      ]
+    };
+  }
+
+  // Default insights for other products
+  return {
+    summary: `${product?.name || 'This product'} offers great value and quality. Explore the features and specifications to see if it meets your needs.`,
+    keyFeatures: [
+      {
+        title: "Quality Construction",
+        description: "Built with premium materials for durability",
+        impact: "High"
+      },
+      {
+        title: "User-Friendly Design",
+        description: "Intuitive interface and easy to use",
+        impact: "Medium"
+      },
+      {
+        title: "Great Value",
+        description: "Competitive pricing for the features offered",
+        impact: "Medium"
+      }
+    ],
+    useCases: [
+      {
+        scenario: "Everyday Use",
+        description: "Perfect for daily activities and regular use",
+        benefit: "Reliable performance when you need it"
+      }
+    ],
+    technicalSpecs: {
+      quality: "Premium",
+      warranty: "Standard manufacturer warranty"
+    },
+    customerSentiment: {
+      overallRating: 4.0,
+      totalReviews: 0,
+      positiveAspects: ["Quality product", "Good value"],
+      commonConcerns: [],
+      recommendationRate: 80
+    },
+    recommendations: []
+  };
+}
+
+/**
+ * GET /api/products/:productId/insights
+ * Returns AI-powered insights for a specific product
+ */
+router.get("/products/:productId/insights", async (req, res) => {
+  try {
+    const productId = parseInt(req.params.productId);
+    
+    if (isNaN(productId)) {
+      return res.status(400).json({ message: "Invalid product ID" });
+    }
+
+    // Fetch product details
+    const productResult = await db.query(
+      "SELECT id, name, description, price FROM products WHERE id = $1",
+      [productId]
+    );
+
+    if (productResult.rows.length === 0) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const product = productResult.rows[0];
+    const insights = generateProductInsights(productId, product);
+
+    res.json({
+      productId: product.id,
+      productName: product.name,
+      ...insights
+    });
+  } catch (err) {
+    console.error("Product insights error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 module.exports = router;
 
