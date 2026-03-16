@@ -33,8 +33,8 @@ echo "============================================================"
 # ------------------------------
 #  Locations
 # ------------------------------
-JMETER_BIN="/opt/apache-jmeter-5.6.3/bin/jmeter"
-JMX="/root/retailapp-main/jmeter/retail_spike.jmx"
+JMETER_BIN="/opt/jmeter/apache-jmeter-5.6.3/bin/jmeter"
+JMX="./retail_spike.jmx"
 
 
 # ------------------------------
