@@ -24,17 +24,21 @@ RUN npm run build
 ###############################################
 FROM nginx:1.27-alpine
 
-RUN mkdir -p /tmp/nginx_temp && \
-    mkdir -p /tmp/nginx && \
-    chmod -R 777 /tmp && \
-    chmod -R 777 /var/cache/nginx || true
+RUN mkdir -p /tmp/nginx_temp \
+    && mkdir -p /tmp/nginx \
+    && chmod -R 777 /tmp \
+    && chmod -R 777 /var/cache/nginx || true
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY default.conf /etc/nginx/conf.d/default.conf
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
+RUN chgrp -R 0 /etc/nginx /usr/share/nginx /var/cache/nginx /var/run \
+    && chmod -R g+rwX /etc/nginx /usr/share/nginx /var/cache/nginx /var/run
+
 EXPOSE 8080
+
 USER 1001
 
 CMD ["nginx", "-g", "daemon off;"]
