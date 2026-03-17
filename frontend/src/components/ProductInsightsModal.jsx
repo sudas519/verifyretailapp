@@ -62,6 +62,23 @@ function ProductInsightsModal({ productId, onClose }) {
             <p>Loading AI insights...</p>
           </div>
         ) : product && insights ? (
+          insights.status === "generating" ? (
+            // Show generating state with animation
+            <div className="modal-body">
+              <div className="insights-generating">
+                <div className="generating-animation">
+                  <div className="spinner-large"></div>
+                  <div className="sparkles">✨</div>
+                </div>
+                <h3 className="generating-title">🤖 AI Insights Coming Soon!</h3>
+                <p className="generating-message">{insights.message}</p>
+                <div className="generating-info">
+                  <p>Our AI is analyzing product documentation and generating personalized insights for <strong>{insights.productName}</strong>.</p>
+                  <p className="generating-tip">💡 Tip: Refresh this page in a few moments to see the insights!</p>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="modal-body">
             {/* Product Header */}
             <div className="modal-header">
@@ -92,8 +109,15 @@ function ProductInsightsModal({ productId, onClose }) {
               <div className="modal-section">
                 <h3 className="modal-section-title">⭐ Key Features</h3>
                 <ul className="modal-list">
-                  {insights.keyFeatures.map((feature, idx) => (
-                    <li key={idx}>{feature}</li>
+                  {insights.keyFeatures && insights.keyFeatures.map((feature, idx) => (
+                    <li key={idx}>
+                      {typeof feature === 'string' ? feature : (
+                        <>
+                          <strong>{feature.title}:</strong> {feature.description}
+                          {feature.impact && <span className="feature-impact"> ({feature.impact} impact)</span>}
+                        </>
+                      )}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -102,8 +126,15 @@ function ProductInsightsModal({ productId, onClose }) {
               <div className="modal-section">
                 <h3 className="modal-section-title">💡 Ideal Use Cases</h3>
                 <ul className="modal-list">
-                  {insights.useCases.map((useCase, idx) => (
-                    <li key={idx}>{useCase}</li>
+                  {insights.useCases && insights.useCases.map((useCase, idx) => (
+                    <li key={idx}>
+                      {typeof useCase === 'string' ? useCase : (
+                        <>
+                          <strong>{useCase.scenario}:</strong> {useCase.description}
+                          {useCase.benefit && <div className="use-case-benefit">✓ {useCase.benefit}</div>}
+                        </>
+                      )}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -124,49 +155,68 @@ function ProductInsightsModal({ productId, onClose }) {
               </div>
 
               {/* Customer Sentiment */}
-              <div className="modal-section">
-                <h3 className="modal-section-title">📊 Customer Sentiment</h3>
-                <div className="modal-sentiment">
-                  <div className="sentiment-bar">
-                    <div 
-                      className="sentiment-positive" 
-                      style={{ width: `${insights.customerSentiment.positive}%` }}
-                    >
-                      {insights.customerSentiment.positive}%
-                    </div>
-                    <div 
-                      className="sentiment-neutral" 
-                      style={{ width: `${insights.customerSentiment.neutral}%` }}
-                    >
-                      {insights.customerSentiment.neutral}%
-                    </div>
-                    <div 
-                      className="sentiment-negative" 
-                      style={{ width: `${insights.customerSentiment.negative}%` }}
-                    >
-                      {insights.customerSentiment.negative}%
-                    </div>
-                  </div>
-                  <div className="sentiment-legend">
-                    <span><span className="dot positive"></span> Positive</span>
-                    <span><span className="dot neutral"></span> Neutral</span>
-                    <span><span className="dot negative"></span> Negative</span>
+              {insights.customerSentiment && (
+                <div className="modal-section">
+                  <h3 className="modal-section-title">📊 Customer Sentiment</h3>
+                  <div className="modal-sentiment">
+                    {insights.customerSentiment.overallRating && (
+                      <div className="sentiment-rating">
+                        <strong>Overall Rating:</strong> {insights.customerSentiment.overallRating}/5
+                        {insights.customerSentiment.totalReviews > 0 && (
+                          <span> ({insights.customerSentiment.totalReviews} reviews)</span>
+                        )}
+                      </div>
+                    )}
+                    {insights.customerSentiment.positiveAspects && insights.customerSentiment.positiveAspects.length > 0 && (
+                      <div className="sentiment-aspects">
+                        <strong>Positive Aspects:</strong>
+                        <ul>
+                          {insights.customerSentiment.positiveAspects.map((aspect, idx) => (
+                            <li key={idx}>✓ {aspect}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {insights.customerSentiment.commonConcerns && insights.customerSentiment.commonConcerns.length > 0 && (
+                      <div className="sentiment-concerns">
+                        <strong>Common Concerns:</strong>
+                        <ul>
+                          {insights.customerSentiment.commonConcerns.map((concern, idx) => (
+                            <li key={idx}>⚠ {concern}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {insights.customerSentiment.recommendationRate && (
+                      <div className="sentiment-recommendation">
+                        <strong>Recommendation Rate:</strong> {insights.customerSentiment.recommendationRate}%
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* AI Recommendations */}
-              <div className="modal-section">
-                <h3 className="modal-section-title">🎯 AI Recommendations</h3>
-                <div className="modal-recommendations">
-                  {insights.recommendations.map((rec, idx) => (
-                    <div key={idx} className="modal-recommendation">
-                      <span className="rec-number">{idx + 1}</span>
-                      <span className="rec-text">{rec}</span>
-                    </div>
-                  ))}
+              {insights.recommendations && insights.recommendations.length > 0 && (
+                <div className="modal-section">
+                  <h3 className="modal-section-title">🎯 AI Recommendations</h3>
+                  <div className="modal-recommendations">
+                    {insights.recommendations.map((rec, idx) => (
+                      <div key={idx} className="modal-recommendation">
+                        <span className="rec-number">{idx + 1}</span>
+                        <span className="rec-text">
+                          {typeof rec === 'string' ? rec : (
+                            <>
+                              <strong>{rec.type}:</strong> {rec.item}
+                              {rec.reason && <div className="rec-reason">{rec.reason}</div>}
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Disclaimer */}
               <div className="modal-disclaimer">
@@ -176,6 +226,7 @@ function ProductInsightsModal({ productId, onClose }) {
               </div>
             </div>
           </div>
+          )
         ) : (
           <div className="modal-error">
             <p>Unable to load product insights</p>

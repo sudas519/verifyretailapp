@@ -2,9 +2,14 @@
 const express = require("express");
 const db = require("./db");
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "changeme-in-prod";
+
+// RAG Retrieval Server Configuration
+const RAG_RETRIEVAL_URL = process.env.RAG_RETRIEVAL_URL || "http://localhost:8081";
+const RAG_BEARER_TOKEN = process.env.RAG_BEARER_TOKEN || "";
 
 // How long a login counts as "active" (in minutes) for real-time metric
 const ACTIVE_WINDOW_MINUTES = 5;
@@ -341,16 +346,439 @@ router.get(
 );
 
 /* ==================================================================
- * Product Insights API - AI-powered product analysis
+ * Product Insights API - RAG-powered product analysis
  * =================================================================*/
 
 /**
- * Generate detailed insights for a specific product
- * Returns comprehensive analysis including features, use cases, and recommendations
+ * Fetch product insights from RAG retrieval server using MCP protocol
+ * Uses semantic search to find relevant product information from Milvus
  */
-function generateProductInsights(productId, product) {
+async function fetchProductInsightsFromRAG(productName) {
+  try {
+    // Prepare MCP request payload for calling the retrieve tool
+    const mcpRequest = {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: {
+        name: "retrieve",
+        arguments: {
+          query: productName,
+          k: 5
+        }
+      }
+    };
+
+    // Prepare headers - MCP requires both content types in Accept header
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream'
+    };
+
+    // Add bearer token if configured
+    if (RAG_BEARER_TOKEN) {
+      headers['Authorization'] = `Bearer ${RAG_BEARER_TOKEN}`;
+    }
+
+    // Make MCP request to the /mcp endpoint
+    const response = await axios.post(
+      `${RAG_RETRIEVAL_URL}/mcp`,
+      mcpRequest,
+      {
+        headers,
+        timeout: 10000
+      }
+    );
+
+    // Handle SSE response format
+    let mcpResponse;
+    if (typeof response.data === 'string') {
+      // Parse SSE format: "event: message\r\ndata: {...}\r\n\r\n"
+      const lines = response.data.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6); // Remove "data: " prefix
+          mcpResponse = JSON.parse(jsonStr);
+          break;
+        }
+      }
+    } else {
+      // Already parsed JSON
+      mcpResponse = response.data;
+    }
+    
+    if (!mcpResponse || !mcpResponse.result) {
+      console.log('[RAG] Could not parse MCP response');
+      return [];
+    }
+
+    const result = mcpResponse.result;
+    
+    // Check for structuredContent first (preferred format from SSE)
+    if (result.structuredContent && result.structuredContent.result) {
+      const data = result.structuredContent.result;
+      if (data.results && Array.isArray(data.results)) {
+        console.log(`[RAG] Retrieved ${data.results.length} results from structuredContent`);
+        return data.results;
+      }
+    }
+    
+    // Fallback: MCP tools return content array with text
+    if (result.content && result.content.length > 0) {
+      const content = result.content[0];
+      if (content.type === "text") {
+        const data = JSON.parse(content.text);
+        if (data.results && Array.isArray(data.results)) {
+          console.log(`[RAG] Retrieved ${data.results.length} results from content.text`);
+          return data.results;
+        }
+      }
+    }
+    
+    // Return empty array if MCP responded but no valid data structure
+    console.log('[RAG] No results found in response');
+    return [];
+  } catch (error) {
+    console.error("RAG retrieval error:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", JSON.stringify(error.response.data));
+    }
+    // Return null to indicate MCP server failure/unavailable
+    return null;
+  }
+}
+
+/**
+ * Extract structured data from markdown text
+ */
+function parseMarkdownSection(text, sectionName) {
+  const lines = text.split('\n');
+  const result = [];
+  let inSection = false;
+  
+  for (const line of lines) {
+    if (line.includes(`## ${sectionName}`)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('##')) {
+      break;
+    }
+    if (inSection && line.trim()) {
+      result.push(line.trim());
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Extract key features with impact levels from markdown
+ */
+function extractKeyFeatures(text) {
+  const features = [];
+  const lines = text.split('\n');
+  let currentFeature = null;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Feature title (### heading)
+    if (line.startsWith('###') && !line.includes('##')) {
+      if (currentFeature) {
+        features.push(currentFeature);
+      }
+      currentFeature = {
+        title: line.replace(/^###\s*/, '').trim(),
+        description: '',
+        impact: 'Medium'
+      };
+    }
+    // Impact level
+    else if (line.startsWith('**Impact Level:**') && currentFeature) {
+      const impact = line.replace('**Impact Level:**', '').trim();
+      currentFeature.impact = impact;
+    }
+    // Description
+    else if (currentFeature && line && !line.startsWith('#') && !line.startsWith('**')) {
+      if (currentFeature.description) {
+        currentFeature.description += ' ';
+      }
+      currentFeature.description += line;
+    }
+  }
+  
+  if (currentFeature) {
+    features.push(currentFeature);
+  }
+  
+  return features;
+}
+
+/**
+ * Extract use cases with benefits from markdown
+ */
+function extractUseCases(text) {
+  const useCases = [];
+  const lines = text.split('\n');
+  let currentUseCase = null;
+  let inBenefits = false;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Use case title (### heading)
+    if (trimmed.startsWith('###') && !trimmed.includes('##')) {
+      if (currentUseCase) {
+        useCases.push(currentUseCase);
+      }
+      currentUseCase = {
+        scenario: trimmed.replace(/^###\s*/, '').trim(),
+        description: '',
+        benefits: []
+      };
+      inBenefits = false;
+    }
+    // Benefits section
+    else if (trimmed.startsWith('**Benefits:**')) {
+      inBenefits = true;
+    }
+    // Benefit item
+    else if (inBenefits && trimmed.startsWith('-') && currentUseCase) {
+      currentUseCase.benefits.push(trimmed.replace(/^-\s*/, ''));
+    }
+    // Description
+    else if (currentUseCase && !inBenefits && trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('**')) {
+      if (currentUseCase.description) {
+        currentUseCase.description += ' ';
+      }
+      currentUseCase.description += trimmed;
+    }
+  }
+  
+  if (currentUseCase) {
+    useCases.push(currentUseCase);
+  }
+  
+  // Format for frontend
+  return useCases.map(uc => ({
+    scenario: uc.scenario,
+    description: uc.description,
+    benefit: uc.benefits.join('; ') || 'Enhanced productivity and satisfaction'
+  }));
+}
+
+/**
+ * Extract technical specifications from markdown
+ */
+function extractTechnicalSpecs(text) {
+  const specs = {};
+  const lines = text.split('\n');
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('-') && trimmed.includes(':')) {
+      const [key, ...valueParts] = trimmed.substring(1).split(':');
+      const value = valueParts.join(':').trim();
+      if (key && value) {
+        const cleanKey = key.trim().replace(/\*\*/g, '').toLowerCase().replace(/\s+/g, '_');
+        specs[cleanKey] = value;
+      }
+    }
+  }
+  
+  return specs;
+}
+
+/**
+ * Extract customer sentiment from markdown
+ */
+function extractCustomerSentiment(text) {
+  const sentiment = {
+    overallRating: 0,
+    totalReviews: 0,
+    positiveAspects: [],
+    commonConcerns: [],
+    recommendationRate: 0
+  };
+  
+  const lines = text.split('\n');
+  let inPositive = false;
+  let inConcerns = false;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Extract rating
+    if (trimmed.includes('Overall Rating:') || trimmed.startsWith('###') && trimmed.includes('/5')) {
+      const match = trimmed.match(/(\d+\.?\d*)\s*\/\s*5/);
+      if (match) {
+        sentiment.overallRating = parseFloat(match[1]);
+      }
+    }
+    
+    // Positive aspects section
+    if (trimmed.includes('### Positive Aspects') || trimmed.includes('Positive Aspects')) {
+      inPositive = true;
+      inConcerns = false;
+    }
+    // Common concerns section
+    else if (trimmed.includes('### Common Feedback') || trimmed.includes('Common Feedback') || trimmed.includes('Common Concerns')) {
+      inConcerns = true;
+      inPositive = false;
+    }
+    // Extract list items
+    else if (trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*/)) {
+      const match = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*/);
+      if (match) {
+        const item = match[1] + (trimmed.includes('-') ? ': ' + trimmed.split('-')[1].trim() : '');
+        if (inPositive) {
+          sentiment.positiveAspects.push(item);
+        } else if (inConcerns) {
+          sentiment.commonConcerns.push(item);
+        }
+      }
+    }
+  }
+  
+  // Default recommendation rate based on rating
+  sentiment.recommendationRate = Math.round(sentiment.overallRating * 20);
+  
+  return sentiment;
+}
+
+/**
+ * Extract FAQs from markdown
+ */
+function extractFAQs(text) {
+  const faqs = [];
+  const lines = text.split('\n');
+  let currentQ = null;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('**Q:')) {
+      if (currentQ) {
+        faqs.push(currentQ);
+      }
+      currentQ = {
+        question: trimmed.replace(/^\*\*Q:\s*/, '').replace(/\*\*$/, '').replace(/\?$/, '') + '?',
+        answer: ''
+      };
+    } else if (trimmed.startsWith('A:') && currentQ) {
+      currentQ.answer = trimmed.replace(/^A:\s*/, '');
+    }
+  }
+  
+  if (currentQ) {
+    faqs.push(currentQ);
+  }
+  
+  return faqs;
+}
+
+/**
+ * Transform RAG results into structured insights
+ * Extracts ALL available data from MCP server results
+ */
+function transformRAGToInsights(ragResults, product) {
+  // null means MCP server failed/unavailable
+  if (ragResults === null) {
+    return {
+      status: "generating",
+      message: "We're generating AI-powered insights for this product. Please check back in a moment!",
+      productName: product?.name || "this product"
+    };
+  }
+  
+  // Empty array means MCP worked but no documents found in Milvus
+  if (ragResults.length === 0) {
+    return {
+      status: "generating",
+      message: "AI insights for this product are being indexed. Please check back shortly!",
+      productName: product?.name || "this product"
+    };
+  }
+
+  // Combine all text from results
+  const fullText = ragResults.map(r => r.text || '').join('\n\n');
+  
+  console.log(`[RAG] Processing ${ragResults.length} results, total text length: ${fullText.length}`);
+
+  // Extract all sections
+  const keyFeatures = extractKeyFeatures(fullText);
+  const useCases = extractUseCases(fullText);
+  const technicalSpecs = extractTechnicalSpecs(fullText);
+  const customerSentiment = extractCustomerSentiment(fullText);
+  const faqs = extractFAQs(fullText);
+  
+  // Extract summary from Product Summary section
+  let summary = '';
+  const summaryMatch = fullText.match(/## Product Summary\s+([\s\S]+?)(?=\n##|$)/);
+  if (summaryMatch) {
+    summary = summaryMatch[1].trim().split('\n')[0];
+  }
+  
+  // Extract recommendations
+  const recommendations = [];
+  const recoMatch = fullText.match(/### Complementary Products\s+([\s\S]+?)(?=\n###|$)/);
+  if (recoMatch) {
+    const recoLines = recoMatch[1].split('\n').filter(l => l.trim().startsWith('-'));
+    recoLines.forEach(line => {
+      const item = line.replace(/^-\s*/, '').trim();
+      if (item) {
+        recommendations.push({
+          type: 'Accessory',
+          item: item,
+          reason: 'Enhances product experience'
+        });
+      }
+    });
+  }
+
+  console.log(`[RAG] Extracted: ${keyFeatures.length} features, ${useCases.length} use cases, ${Object.keys(technicalSpecs).length} specs`);
+
+  return {
+    summary: summary || `${product.name} offers excellent features and performance.`,
+    keyFeatures: keyFeatures.length > 0 ? keyFeatures : [
+      {
+        title: "Quality Product",
+        description: "High-quality construction and materials",
+        impact: "High"
+      }
+    ],
+    useCases: useCases.length > 0 ? useCases : [
+      {
+        scenario: "General Use",
+        description: "Suitable for everyday needs",
+        benefit: "Reliable performance"
+      }
+    ],
+    technicalSpecs: Object.keys(technicalSpecs).length > 0 ? technicalSpecs : {
+      quality: "Premium",
+      warranty: "Standard manufacturer warranty"
+    },
+    customerSentiment: customerSentiment.overallRating > 0 ? customerSentiment : {
+      overallRating: 4.2,
+      totalReviews: 0,
+      positiveAspects: ["Quality product", "Good features"],
+      commonConcerns: [],
+      recommendationRate: 85
+    },
+    recommendations: recommendations.length > 0 ? recommendations : [],
+    faqs: faqs.length > 0 ? faqs : [],
+    ragSource: "milvus",
+    ragResultsCount: ragResults.length
+  };
+}
+
+/**
+ * Fallback insights when RAG is unavailable
+ */
+function generateFallbackInsights(product) {
   // Detailed insights for specific products
-  if (productId === 1) {
+  if (product && product.id === 1) {
     return {
       summary: "The Wireless Bluetooth Headphones offer premium audio quality with advanced noise cancellation technology. Perfect for music enthusiasts and professionals who need to focus in noisy environments.",
       keyFeatures: [
@@ -434,7 +862,7 @@ function generateProductInsights(productId, product) {
     };
   }
   
-  if (productId === 2) {
+  if (product && product.id === 2) {
     return {
       summary: "The Smart Fitness Watch combines advanced health tracking with smart notifications. Ideal for fitness enthusiasts and health-conscious individuals who want comprehensive activity monitoring.",
       keyFeatures: [
@@ -518,9 +946,8 @@ function generateProductInsights(productId, product) {
     };
   }
 
-  // Default insights for other products
   return {
-    summary: `${product?.name || 'This product'} offers great value and quality. Explore the features and specifications to see if it meets your needs.`,
+    summary: `${product?.name || 'This product'} offers great value and quality. RAG insights temporarily unavailable.`,
     keyFeatures: [
       {
         title: "Quality Construction",
@@ -556,13 +983,14 @@ function generateProductInsights(productId, product) {
       commonConcerns: [],
       recommendationRate: 80
     },
-    recommendations: []
+    recommendations: [],
+    ragSource: "fallback"
   };
 }
 
 /**
  * GET /api/products/:productId/insights
- * Returns AI-powered insights for a specific product
+ * Returns RAG-powered insights for a specific product
  */
 router.get("/products/:productId/insights", async (req, res) => {
   try {
@@ -583,7 +1011,10 @@ router.get("/products/:productId/insights", async (req, res) => {
     }
 
     const product = productResult.rows[0];
-    const insights = generateProductInsights(productId, product);
+    
+    // Fetch insights from RAG retrieval server
+    const ragResults = await fetchProductInsightsFromRAG(product.name);
+    const insights = transformRAGToInsights(ragResults, product);
 
     res.json({
       productId: product.id,
