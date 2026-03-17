@@ -8,6 +8,7 @@ import { getProducts, getProductInsights } from "../api";
 function ProductInsightsModal({ productId, onClose }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingStage, setLoadingStage] = useState('initializing'); // Progressive loading stage
   const [insights, setInsights] = useState(null);
   const [performanceMetrics, setPerformanceMetrics] = useState(null);
 
@@ -19,10 +20,12 @@ function ProductInsightsModal({ productId, onClose }) {
 
   async function loadProductAndInsights() {
     setLoading(true);
+    setLoadingStage('initializing');
     const startTime = Date.now();
     
     try {
-      // Fetch product details
+      // Stage 1: Fetching product data
+      setLoadingStage('fetching_product');
       const products = await getProducts();
       const foundProduct = products.find(p => p.id === parseInt(productId));
       
@@ -33,8 +36,26 @@ function ProductInsightsModal({ productId, onClose }) {
       
       setProduct(foundProduct);
       
+      // Stage 2: Searching knowledge base
+      const elapsedTime = Date.now() - startTime;
+      if (elapsedTime < 500) {
+        // If product loaded quickly, show searching stage
+        setLoadingStage('searching_knowledge');
+        await new Promise(resolve => setTimeout(resolve, 300)); // Brief pause for UX
+      } else {
+        setLoadingStage('searching_knowledge');
+      }
+      
+      // Stage 3: Generating insights
+      setLoadingStage('generating_insights');
+      
       // OPTIMIZED: Pass product name to backend to skip DB query
       const insightsData = await getProductInsights(productId, foundProduct.name);
+      
+      // Stage 4: Finalizing
+      setLoadingStage('finalizing');
+      await new Promise(resolve => setTimeout(resolve, 200)); // Brief pause for smooth transition
+      
       setInsights(insightsData);
       
       // Track performance metrics
@@ -49,10 +70,12 @@ function ProductInsightsModal({ productId, onClose }) {
       console.log(`[FRONTEND PERF] Product ${productId} insights loaded in ${totalTime}ms (Backend: ${insightsData.responseTime}ms, Cached: ${insightsData.cached})`);
       
       setLoading(false);
+      setLoadingStage('complete');
       
     } catch (error) {
       console.error("Error loading product insights:", error);
       setLoading(false);
+      setLoadingStage('error');
       // Show error state or fallback
       setInsights({
         summary: "Unable to load AI insights at this time. Please try again later.",
@@ -65,7 +88,29 @@ function ProductInsightsModal({ productId, onClose }) {
     }
   }
 
+  // Progressive loading messages
+  const getLoadingMessage = () => {
+    switch (loadingStage) {
+      case 'initializing':
+        return { icon: '🔄', text: 'Initializing...', subtext: 'Preparing to load insights' };
+      case 'fetching_product':
+        return { icon: '📦', text: 'Loading product data...', subtext: 'Fetching product information' };
+      case 'searching_knowledge':
+        return { icon: '🔍', text: 'Searching knowledge base...', subtext: 'Finding relevant information from our AI database' };
+      case 'generating_insights':
+        return { icon: '🤖', text: 'Generating AI insights...', subtext: 'Our AI is analyzing product documentation' };
+      case 'finalizing':
+        return { icon: '✨', text: 'Finalizing...', subtext: 'Preparing your personalized insights' };
+      case 'error':
+        return { icon: '⚠️', text: 'Error loading insights', subtext: 'Please try again' };
+      default:
+        return { icon: '🔄', text: 'Loading...', subtext: 'Please wait' };
+    }
+  };
+
   if (!productId) return null;
+
+  const loadingMsg = getLoadingMessage();
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -75,7 +120,29 @@ function ProductInsightsModal({ productId, onClose }) {
         {loading ? (
           <div className="modal-loading">
             <div className="loading-spinner"></div>
-            <p>Loading AI insights...</p>
+            <div className="loading-stage-indicator">
+              <span className="loading-icon">{loadingMsg.icon}</span>
+              <p className="loading-text">{loadingMsg.text}</p>
+              <p className="loading-subtext">{loadingMsg.subtext}</p>
+            </div>
+            {performanceMetrics && performanceMetrics.cached && (
+              <div className="loading-hint">
+                <span className="hint-icon">⚡</span>
+                <span className="hint-text">Loading from cache - this will be fast!</span>
+              </div>
+            )}
+            <div className="loading-progress-bar">
+              <div
+                className="loading-progress-fill"
+                style={{
+                  width: loadingStage === 'initializing' ? '10%' :
+                         loadingStage === 'fetching_product' ? '30%' :
+                         loadingStage === 'searching_knowledge' ? '50%' :
+                         loadingStage === 'generating_insights' ? '75%' :
+                         loadingStage === 'finalizing' ? '95%' : '100%'
+                }}
+              ></div>
+            </div>
           </div>
         ) : product && insights ? (
           insights.status === "generating" ? (
