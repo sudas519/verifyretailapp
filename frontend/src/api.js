@@ -126,9 +126,11 @@ export async function getLoginTrend12h() {
 
 /* ---------------------
     PRODUCT INSIGHTS (NEW)
+    OPTIMIZED: Pass product name to skip backend DB query
 ----------------------*/
-export async function getProductInsights(productId) {
-  const res = await api.get(`/products/${productId}/insights`);
+export async function getProductInsights(productId, productName = null) {
+  const params = productName ? { name: productName } : {};
+  const res = await api.get(`/products/${productId}/insights`, { params });
   return res.data;
 }
 

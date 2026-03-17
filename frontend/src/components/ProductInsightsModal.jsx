@@ -3,11 +3,13 @@ import { getProducts, getProductInsights } from "../api";
 
 // Product Insights Modal Component
 // Fetches AI-powered insights from backend API
+// OPTIMIZED: Passes product name to backend to skip DB query
 
 function ProductInsightsModal({ productId, onClose }) {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState(null);
+  const [performanceMetrics, setPerformanceMetrics] = useState(null);
 
   useEffect(() => {
     if (productId) {
@@ -17,6 +19,8 @@ function ProductInsightsModal({ productId, onClose }) {
 
   async function loadProductAndInsights() {
     setLoading(true);
+    const startTime = Date.now();
+    
     try {
       // Fetch product details
       const products = await getProducts();
@@ -29,9 +33,21 @@ function ProductInsightsModal({ productId, onClose }) {
       
       setProduct(foundProduct);
       
-      // Fetch AI insights from backend API
-      const insightsData = await getProductInsights(productId);
+      // OPTIMIZED: Pass product name to backend to skip DB query
+      const insightsData = await getProductInsights(productId, foundProduct.name);
       setInsights(insightsData);
+      
+      // Track performance metrics
+      const totalTime = Date.now() - startTime;
+      setPerformanceMetrics({
+        totalTime,
+        cached: insightsData.cached || false,
+        backendTime: insightsData.responseTime || 0
+      });
+      
+      // Log performance for debugging
+      console.log(`[FRONTEND PERF] Product ${productId} insights loaded in ${totalTime}ms (Backend: ${insightsData.responseTime}ms, Cached: ${insightsData.cached})`);
+      
       setLoading(false);
       
     } catch (error) {

@@ -3,6 +3,9 @@ const express = require("express");
 const db = require("./db");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
+const http = require("http");
+const https = require("https");
+const NodeCache = require("node-cache");
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "changeme-in-prod";
@@ -13,6 +16,40 @@ const RAG_BEARER_TOKEN = process.env.RAG_BEARER_TOKEN || "";
 
 // How long a login counts as "active" (in minutes) for real-time metric
 const ACTIVE_WINDOW_MINUTES = 5;
+
+// ============================================================
+// PERFORMANCE OPTIMIZATIONS
+// ============================================================
+
+// In-memory cache for product insights (1 hour TTL)
+const insightsCache = new NodeCache({
+  stdTTL: 3600,           // Cache for 1 hour
+  checkperiod: 120,       // Check for expired keys every 2 minutes
+  useClones: false        // Better performance, don't clone objects
+});
+
+// HTTP Keep-Alive agents for better connection reuse
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,  // Keep connections alive for 30 seconds
+  maxSockets: 50          // Max concurrent connections
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50
+});
+
+// Log cache statistics periodically
+setInterval(() => {
+  const stats = insightsCache.getStats();
+  if (stats.keys > 0) {
+    console.log(`[CACHE STATS] Keys: ${stats.keys}, Hits: ${stats.hits}, Misses: ${stats.misses}, Hit Rate: ${((stats.hits / (stats.hits + stats.misses)) * 100).toFixed(2)}%`);
+  }
+}, 300000); // Every 5 minutes
+
+// ============================================================
 
 /* ------------------------------------------------------------------
  * Shared auth helpers (for these feature routes only)
@@ -352,8 +389,11 @@ router.get(
 /**
  * Fetch product insights from RAG retrieval server using MCP protocol
  * Uses semantic search to find relevant product information from Milvus
+ * OPTIMIZED: Reduced k from 5 to 3, added HTTP Keep-Alive
  */
 async function fetchProductInsightsFromRAG(productName) {
+  const startTime = Date.now();
+  
   try {
     // Prepare MCP request payload for calling the retrieve tool
     const mcpRequest = {
@@ -364,7 +404,7 @@ async function fetchProductInsightsFromRAG(productName) {
         name: "retrieve",
         arguments: {
           query: productName,
-          k: 5
+          k: 3  // OPTIMIZED: Reduced from 5 to 3 for faster retrieval
         }
       }
     };
@@ -380,13 +420,15 @@ async function fetchProductInsightsFromRAG(productName) {
       headers['Authorization'] = `Bearer ${RAG_BEARER_TOKEN}`;
     }
 
-    // Make MCP request to the /mcp endpoint
+    // Make MCP request to the /mcp endpoint with Keep-Alive
     const response = await axios.post(
       `${RAG_RETRIEVAL_URL}/mcp`,
       mcpRequest,
       {
         headers,
-        timeout: 10000
+        timeout: 10000,
+        httpAgent,   // OPTIMIZED: HTTP Keep-Alive agent
+        httpsAgent   // OPTIMIZED: HTTPS Keep-Alive agent
       }
     );
 
@@ -446,6 +488,13 @@ async function fetchProductInsightsFromRAG(productName) {
     }
     // Return null to indicate MCP server failure/unavailable
     return null;
+  } finally {
+    // OPTIMIZED: Performance logging
+    const duration = Date.now() - startTime;
+    console.log(`[PERF] RAG retrieval for "${productName}": ${duration}ms`);
+    if (duration > 2000) {
+      console.warn(`[SLOW] RAG retrieval took ${duration}ms for "${productName}"`);
+    }
   }
 }
 
@@ -991,35 +1040,79 @@ function generateFallbackInsights(product) {
 /**
  * GET /api/products/:productId/insights
  * Returns RAG-powered insights for a specific product
+ * OPTIMIZED: Added caching, optional product name parameter, performance logging
  */
 router.get("/products/:productId/insights", async (req, res) => {
+  const requestStartTime = Date.now();
+  
   try {
     const productId = parseInt(req.params.productId);
+    const productNameParam = req.query.name; // OPTIMIZED: Optional product name from frontend
     
     if (isNaN(productId)) {
       return res.status(400).json({ message: "Invalid product ID" });
     }
 
-    // Fetch product details
-    const productResult = await db.query(
-      "SELECT id, name, description, price FROM products WHERE id = $1",
-      [productId]
-    );
-
-    if (productResult.rows.length === 0) {
-      return res.status(404).json({ message: "Product not found" });
+    // OPTIMIZED: Check cache first
+    const cacheKey = `product_insights_${productId}`;
+    const cachedInsights = insightsCache.get(cacheKey);
+    
+    if (cachedInsights) {
+      const duration = Date.now() - requestStartTime;
+      console.log(`[CACHE HIT] Product ${productId} insights served from cache in ${duration}ms`);
+      return res.json({
+        ...cachedInsights,
+        cached: true,
+        responseTime: duration
+      });
     }
 
-    const product = productResult.rows[0];
+    console.log(`[CACHE MISS] Product ${productId} - fetching from RAG`);
+
+    let product;
+    let productName;
+
+    // OPTIMIZED: Use provided product name if available, skip DB query
+    if (productNameParam) {
+      productName = productNameParam;
+      product = { id: productId, name: productName };
+      console.log(`[OPTIMIZED] Using provided product name: "${productName}" - skipped DB query`);
+    } else {
+      // Fallback: Fetch product details from database
+      const productResult = await db.query(
+        "SELECT id, name, description, price FROM products WHERE id = $1",
+        [productId]
+      );
+
+      if (productResult.rows.length === 0) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+
+      product = productResult.rows[0];
+      productName = product.name;
+    }
     
     // Fetch insights from RAG retrieval server
-    const ragResults = await fetchProductInsightsFromRAG(product.name);
+    const ragResults = await fetchProductInsightsFromRAG(productName);
     const insights = transformRAGToInsights(ragResults, product);
 
-    res.json({
+    const responseData = {
       productId: product.id,
-      productName: product.name,
-      ...insights
+      productName: productName,
+      ...insights,
+      cached: false
+    };
+
+    // OPTIMIZED: Store in cache
+    insightsCache.set(cacheKey, responseData);
+    console.log(`[CACHE SET] Product ${productId} insights cached`);
+
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`[PERF] Total request time for product ${productId}: ${totalDuration}ms`);
+
+    res.json({
+      ...responseData,
+      responseTime: totalDuration
     });
   } catch (err) {
     console.error("Product insights error:", err);
