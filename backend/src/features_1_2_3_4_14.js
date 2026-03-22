@@ -11,7 +11,7 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "changeme-in-prod";
 
 // RAG Retrieval Server Configuration
-const RAG_RETRIEVAL_URL = process.env.RAG_RETRIEVAL_URL || "http://localhost:8081";
+const RAG_RETRIEVAL_URL = process.env.RAG_RETRIEVAL_URL || "http://localhost:8080";
 const RAG_BEARER_TOKEN = process.env.RAG_BEARER_TOKEN || "";
 
 // How long a login counts as "active" (in minutes) for real-time metric
@@ -395,101 +395,47 @@ async function fetchProductInsightsFromRAG(productName) {
   const startTime = Date.now();
   
   try {
-    // Prepare MCP request payload for calling the retrieve tool
-    const mcpRequest = {
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "tools/call",
-      params: {
-        name: "retrieve",
-        arguments: {
-          query: productName,
-          k: 3  // OPTIMIZED: Reduced from 5 to 3 for faster retrieval
-        }
-      }
-    };
-
-    // Prepare headers - MCP requires both content types in Accept header
-    const headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream'
-    };
-
-    // Add bearer token if configured
-    if (RAG_BEARER_TOKEN) {
-      headers['Authorization'] = `Bearer ${RAG_BEARER_TOKEN}`;
-    }
-
-    // Make MCP request to the /mcp endpoint with Keep-Alive
+    console.log(`[RAG] Fetching insights for product: "${productName}"`);
+    
+    // Call FastAPI /retrieve endpoint directly
     const response = await axios.post(
-      `${RAG_RETRIEVAL_URL}/mcp`,
-      mcpRequest,
+      `${RAG_RETRIEVAL_URL}/retrieve`,
       {
-        headers,
-        timeout: 10000,
-        httpAgent,   // OPTIMIZED: HTTP Keep-Alive agent
-        httpsAgent   // OPTIMIZED: HTTPS Keep-Alive agent
+        query: productName,
+        top_k: 3  // Retrieve top 3 results
+      },
+      {
+        timeout: 30000,  // 30 second timeout
+        headers: {
+          'Content-Type': 'application/json'
+        }
       }
     );
 
-    // Handle SSE response format
-    let mcpResponse;
-    if (typeof response.data === 'string') {
-      // Parse SSE format: "event: message\r\ndata: {...}\r\n\r\n"
-      const lines = response.data.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const jsonStr = line.substring(6); // Remove "data: " prefix
-          mcpResponse = JSON.parse(jsonStr);
-          break;
-        }
-      }
-    } else {
-      // Already parsed JSON
-      mcpResponse = response.data;
+    // FastAPI returns: { results: [...], backend: "...", query: "..." }
+    if (response.data && response.data.results && Array.isArray(response.data.results)) {
+      console.log(`[RAG] Retrieved ${response.data.results.length} results from FastAPI`);
+      return response.data.results;
     }
     
-    if (!mcpResponse || !mcpResponse.result) {
-      console.log('[RAG] Could not parse MCP response');
-      return [];
-    }
-
-    const result = mcpResponse.result;
-    
-    // Check for structuredContent first (preferred format from SSE)
-    if (result.structuredContent && result.structuredContent.result) {
-      const data = result.structuredContent.result;
-      if (data.results && Array.isArray(data.results)) {
-        console.log(`[RAG] Retrieved ${data.results.length} results from structuredContent`);
-        return data.results;
-      }
-    }
-    
-    // Fallback: MCP tools return content array with text
-    if (result.content && result.content.length > 0) {
-      const content = result.content[0];
-      if (content.type === "text") {
-        const data = JSON.parse(content.text);
-        if (data.results && Array.isArray(data.results)) {
-          console.log(`[RAG] Retrieved ${data.results.length} results from content.text`);
-          return data.results;
-        }
-      }
-    }
-    
-    // Return empty array if MCP responded but no valid data structure
+    // No results found
     console.log('[RAG] No results found in response');
     return [];
+    
   } catch (error) {
-    console.error("RAG retrieval error:", error.message);
-    if (error.response) {
-      console.error("Response status:", error.response.status);
-      console.error("Response data:", JSON.stringify(error.response.data));
+    console.error("[RAG] Retrieval error:", error.message);
+    
+    if (error.code === 'ECONNREFUSED') {
+      console.error("[RAG] Connection refused - RAG server may not be running");
+    } else if (error.response) {
+      console.error("[RAG] Response status:", error.response.status);
+      console.error("[RAG] Response data:", JSON.stringify(error.response.data));
     }
-    // Return null to indicate MCP server failure/unavailable
+    
+    // Return null to indicate server failure
     return null;
+    
   } finally {
-    // OPTIMIZED: Performance logging
     const duration = Date.now() - startTime;
     console.log(`[PERF] RAG retrieval for "${productName}": ${duration}ms`);
     if (duration > 2000) {
@@ -737,7 +683,9 @@ function transformRAGToInsights(ragResults, product) {
     return {
       status: "generating",
       message: "We're generating AI-powered insights for this product. Please check back in a moment!",
-      productName: product?.name || "this product"
+      productName: product?.name || "this product",
+      ragSource: "unavailable",
+      ragResultsCount: 0
     };
   }
   
@@ -746,7 +694,9 @@ function transformRAGToInsights(ragResults, product) {
     return {
       status: "generating",
       message: "AI insights for this product are being indexed. Please check back shortly!",
-      productName: product?.name || "this product"
+      productName: product?.name || "this product",
+      ragSource: "empty",
+      ragResultsCount: 0
     };
   }
 
@@ -1103,9 +1053,14 @@ router.get("/products/:productId/insights", async (req, res) => {
       cached: false
     };
 
-    // OPTIMIZED: Store in cache
-    insightsCache.set(cacheKey, responseData);
-    console.log(`[CACHE SET] Product ${productId} insights cached`);
+    // OPTIMIZED: Only cache if we have real RAG data (not fallback)
+    // Don't cache generic fallback messages so they can be retried
+    if (insights.ragSource === "milvus" && insights.ragResultsCount > 0) {
+      insightsCache.set(cacheKey, responseData);
+      console.log(`[CACHE SET] Product ${productId} insights cached (${insights.ragResultsCount} RAG results)`);
+    } else {
+      console.log(`[CACHE SKIP] Product ${productId} - fallback response not cached, will retry on next request`);
+    }
 
     const totalDuration = Date.now() - requestStartTime;
     console.log(`[PERF] Total request time for product ${productId}: ${totalDuration}ms`);
