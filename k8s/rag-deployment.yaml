@@ -45,13 +45,13 @@ spec:
             - name: WATSONX_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: watsonx-credentials
-                  key: api-key
+                  name: rag-credentials
+                  key: watsonx-api-key
             - name: WATSONX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
-                  name: watsonx-credentials
-                  key: project-id
+                  name: rag-credentials
+                  key: watsonx-project-id
             - name: EMBEDDING_MODEL_ID
               value: "intfloat/multilingual-e5-large"
             # Vector Database Configuration
@@ -67,10 +67,10 @@ spec:
             - name: MILVUS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: milvus-credentials
-                  key: password
+                  name: rag-credentials
+                  key: milvus-password
             - name: MILVUS_SECURE
-              value: "true"
+              value: "false"
             - name: MILVUS_COLLECTION
               value: "product_insights"
             - name: MILVUS_DENSE_FIELD
