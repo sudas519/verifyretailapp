@@ -45,6 +45,10 @@ spec:
                   fieldPath: status.hostIP
             - name: INSTANA_AGENT_PORT
               value: "42699"
+            - name: RAG_API_URL
+              value: "http://rag-retrieval-api:8080"
+            - name: RAG_API_ENABLED
+              value: "true"
           ports:
             - containerPort: 4000
           resources:
