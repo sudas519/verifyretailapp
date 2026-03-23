@@ -256,11 +256,10 @@ function CatalogPage({ onAddToCart, onAddToWishlist, onProductClick }) {
 
       <div className="product-grid">
         {products.map((p) => (
-          <div
-            className="product-card"
+          <div 
+            className="product-card" 
             key={p.id}
             onClick={() => onProductClick(p.id)}
-            style={{ cursor: 'pointer' }}
           >
             <div className="product-image">
               <img src={p.image_url} alt={p.name} />
@@ -635,3 +634,4 @@ function App() {
 
 export default App;
 
+// Made with Bob
