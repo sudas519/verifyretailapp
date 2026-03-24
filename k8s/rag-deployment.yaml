@@ -41,7 +41,7 @@ spec:
               value: ""
             # IBM Watsonx Embeddings Configuration
             - name: WATSONX_URL
-              value: "https://us-south.ml.cloud.ibm.com"
+              value: ${WATSONX_URL}
             - name: WATSONX_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -59,11 +59,11 @@ spec:
               value: "milvus"
             # Milvus Configuration
             - name: MILVUS_HOST
-              value: "milvus-service"
+              value: ${MILVUS_HOST}
             - name: MILVUS_PORT
-              value: "19530"
+              value: ${MILVUS_PORT}
             - name: MILVUS_USER
-              value: "root"
+              value: ${MILVUS_HOST}
             - name: MILVUS_PASSWORD
               valueFrom:
                 secretKeyRef:
