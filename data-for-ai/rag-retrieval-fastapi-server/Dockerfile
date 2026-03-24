@@ -4,17 +4,18 @@ FROM registry.access.redhat.com/ubi9/python-312:latest
 # Set working directory
 WORKDIR /app
 
-# Copy requirements file
-COPY app/requirements.txt .
+# Copy requirements file with proper permissions
+COPY --chmod=644 app/requirements.txt .
 
-# Install Python dependencies
+# Install Python dependencies (run as root explicitly)
+USER 0
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY app/ .
+# Copy application code with correct permissions
+COPY --chmod=755 app/ .
 
-# Create non-root user (if not already created by base image)
+# Switch back to non-root user
 USER 1001
 
 # Expose port
