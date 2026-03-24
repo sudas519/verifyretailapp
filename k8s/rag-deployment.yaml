@@ -70,7 +70,7 @@ spec:
                   name: rag-credentials
                   key: milvus-password
             - name: MILVUS_SECURE
-              value: "false"
+              value: "true"
             - name: MILVUS_COLLECTION
               value: "product_insights"
             - name: MILVUS_DENSE_FIELD
