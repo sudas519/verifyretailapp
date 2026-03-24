@@ -63,7 +63,7 @@ spec:
             - name: MILVUS_PORT
               value: ${MILVUS_PORT}
             - name: MILVUS_USER
-              value: ${MILVUS_HOST}
+              value: ${MILVUS_USER}
             - name: MILVUS_PASSWORD
               valueFrom:
                 secretKeyRef:
