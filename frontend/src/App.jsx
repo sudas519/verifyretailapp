@@ -29,6 +29,7 @@ import ProfilePage from "./pages/ProfilePage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import ProductReviews from "./components/ProductReviews";
 import ProductInsightsModal from "./components/ProductInsightsModal";
+import AuthCallback from "./components/AuthCallback";
 
 /* -----------------------------------------------------------
  * Toast popup – centered with small animation
@@ -140,73 +141,41 @@ function Navbar({ user, onLogout }) {
 /* ---- LOGIN PAGE ---- */
 
 function LoginPage({ onLogin, onLoginSuccess }) {
-  const [username, setUsername] = useState("aarav.sharma");
-  const [password, setPassword] = useState("Password@123");
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    try {
-      const data = await login(username, password);
-
-      localStorage.setItem("authToken", data.token);
-      localStorage.setItem("authUser", JSON.stringify(data.user));
-
-      onLogin(data.user);
-      if (onLoginSuccess) {
-        onLoginSuccess(data.user);
-      }
-      navigate("/");
-    } catch (err) {
-      setError(err.response?.data?.message || "Login failed");
-    }
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+  
+  function handleIBMVerifyLogin() {
+    // Redirect to backend IBM Verify login endpoint
+    window.location.href = `${API_BASE_URL}/auth/verify/login`;
   }
 
   return (
     <div className="login-page">
       <div className="login-overlay" />
       <div className="login-card fade-in">
-        <div className="login-avatar">R</div>
+        <div className="login-avatar">
+          <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="#0f62fe"/>
+            <path d="M16 8L8 12v8c0 5 3.5 8 8 8s8-3 8-8v-8l-8-4z" fill="white"/>
+          </svg>
+        </div>
 
-        <h2 className="login-title">Sign in</h2>
+        <h2 className="login-title">Welcome to Retail Demo</h2>
         <p className="login-subtitle">
-          Use your demo credentials to continue.
+          Sign in with your IBM Verify account to continue
         </p>
 
-        <form className="login-form" onSubmit={handleSubmit}>
-          <label className="field-label">
-            Username
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="field-input"
-              placeholder="Enter username"
-            />
-          </label>
-
-          <label className="field-label">
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="field-input"
-              placeholder="Enter password"
-            />
-          </label>
-
-          {error && <div className="error-text">{error}</div>}
-
-          <button className="btn-primary" type="submit">
-            Login
-          </button>
-        </form>
+        <button
+          className="btn-ibm-verify"
+          onClick={handleIBMVerifyLogin}
+        >
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor" style={{ marginRight: '8px' }}>
+            <rect width="32" height="32" rx="4" fill="currentColor"/>
+          </svg>
+          Sign in with IBM Verify
+        </button>
 
         <div className="login-footer">
-          Demo users: 50 real users
-          Password: <code>Password@123</code>
+          Secure authentication powered by IBM Verify
         </div>
       </div>
     </div>
@@ -563,6 +532,10 @@ function App() {
               />
             }
           />
+          
+          {/* IBM Verify OAuth Callback Route */}
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          
           <Route path="/cart" element={<CartPage showToast={showToast} />} />
           <Route path="/orders" element={<OrdersPage />} />
 
