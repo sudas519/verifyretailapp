@@ -121,7 +121,9 @@ function Navbar({ user, onLogout }) {
       <div className="nav-right">
         {user ? (
           <>
-            <span className="nav-user">Hi, {user.username}</span>
+            <span className="nav-user">
+              Hi, {user.username || user.displayName || user.email || 'User'}
+            </span>
             <button onClick={onLogout} className="btn-secondary">
               Logout
             </button>
@@ -141,7 +143,30 @@ function Navbar({ user, onLogout }) {
 /* ---- LOGIN PAGE ---- */
 
 function LoginPage({ onLogin, onLoginSuccess }) {
+  const [username, setUsername] = useState("aarav.sharma");
+  const [password, setPassword] = useState("Password@123");
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+  
+  async function handleTraditionalLogin(e) {
+    e.preventDefault();
+    setError("");
+    try {
+      const data = await login(username, password);
+
+      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("authUser", JSON.stringify(data.user));
+
+      onLogin(data.user);
+      if (onLoginSuccess) {
+        onLoginSuccess(data.user);
+      }
+      navigate("/");
+    } catch (err) {
+      setError(err.response?.data?.message || "Login failed");
+    }
+  }
   
   function handleIBMVerifyLogin() {
     // Redirect to backend IBM Verify login endpoint
@@ -152,30 +177,59 @@ function LoginPage({ onLogin, onLoginSuccess }) {
     <div className="login-page">
       <div className="login-overlay" />
       <div className="login-card fade-in">
-        <div className="login-avatar">
-          <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="#0f62fe"/>
-            <path d="M16 8L8 12v8c0 5 3.5 8 8 8s8-3 8-8v-8l-8-4z" fill="white"/>
-          </svg>
-        </div>
+        <div className="login-avatar">R</div>
 
-        <h2 className="login-title">Welcome to Retail Demo</h2>
+        <h2 className="login-title">Sign in</h2>
         <p className="login-subtitle">
-          Sign in with your IBM Verify account to continue
+          Use your credentials to continue
         </p>
 
+        {/* Traditional Login Form */}
+        <form className="login-form" onSubmit={handleTraditionalLogin}>
+          <label className="field-label">
+            Username
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="field-input"
+              placeholder="Enter username"
+            />
+          </label>
+
+          <label className="field-label">
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="field-input"
+              placeholder="Enter password"
+            />
+          </label>
+
+          {error && <div className="error-text">{error}</div>}
+
+          <button className="btn-primary" type="submit">
+            Log in
+          </button>
+        </form>
+
+        {/* Divider */}
+        <div className="login-divider">
+          <span>Or log in with</span>
+        </div>
+
+        {/* IBM Verify Login Button */}
         <button
-          className="btn-ibm-verify"
+          type="button"
+          className="btn-ibm-verify-alt"
           onClick={handleIBMVerifyLogin}
         >
-          <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor" style={{ marginRight: '8px' }}>
-            <rect width="32" height="32" rx="4" fill="currentColor"/>
-          </svg>
-          Sign in with IBM Verify
+          IBM Verify
         </button>
 
         <div className="login-footer">
-          Secure authentication powered by IBM Verify
+          Demo users: 50 real users | Password: <code>Password@123</code>
         </div>
       </div>
     </div>
@@ -456,18 +510,29 @@ function App() {
     );
   }
 
-  // NEW: call backend /auth/logout, then clear client state
+  // NEW: call backend /auth/logout, then clear client state and redirect to Verify logout
   async function handleLogout() {
+    let verifyLogoutUrl = null;
+    
     try {
-      await apiLogout();
+      const response = await apiLogout();
+      verifyLogoutUrl = response.verifyLogoutUrl;
     } catch (err) {
       console.error("Logout API failed (will still clear client state):", err);
     } finally {
       localStorage.removeItem("authToken");
       localStorage.removeItem("authUser");
       setUser(null);
-      navigate("/login");
-      showToast("Logged out", "info");
+      
+      // If we have a Verify logout URL, redirect to it
+      if (verifyLogoutUrl) {
+        console.log("Redirecting to IBM Verify logout:", verifyLogoutUrl);
+        window.location.href = verifyLogoutUrl;
+      } else {
+        // Otherwise, just navigate to login page
+        navigate("/login");
+        showToast("Logged out", "info");
+      }
     }
   }
 

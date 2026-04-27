@@ -57,13 +57,51 @@ function ProfilePage() {
       <p>
         <strong>Username:</strong> {profile.username}
       </p>
-      <p>
-        <strong>Joined:</strong>{" "}
-        {new Date(profile.created_at).toLocaleDateString()}
-      </p>
+      {profile.email && (
+        <p>
+          <strong>Email:</strong> {profile.email}
+        </p>
+      )}
+      {profile.created_at && (
+        <p>
+          <strong>Joined:</strong>{" "}
+          {new Date(profile.created_at).toLocaleDateString()}
+        </p>
+      )}
       <p>
         <strong>Role:</strong> {profile.is_admin ? "Admin" : "User"}
       </p>
+      {profile.auth_method && (
+        <p>
+          <strong>Authentication:</strong>{" "}
+          {profile.auth_method === 'ibm_verify' ? 'IBM Verify' : 'Local'}
+        </p>
+      )}
+
+      {/* Display additional IBM Verify user info if available */}
+      {profile.verifyUserInfo && Object.keys(profile.verifyUserInfo).length > 0 && (
+        <div style={{ marginTop: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
+          <h3 style={{ marginTop: 0, fontSize: '1.1em' }}>IBM Verify Profile Data</h3>
+          {/* {profile.verifyUserInfo.sub && (
+            <p><strong>Subject ID:</strong> {profile.verifyUserInfo.sub}</p>
+          )} */}
+          {profile.verifyUserInfo.name && (
+            <p><strong>Full Name:</strong> {profile.verifyUserInfo.name}</p>
+          )}
+          {/* {profile.verifyUserInfo.given_name && (
+            <p><strong>Given Name:</strong> {profile.verifyUserInfo.given_name}</p>
+          )} */}
+          {profile.verifyUserInfo.family_name && (
+            <p><strong>Family Name:</strong> {profile.verifyUserInfo.family_name}</p>
+          )}
+          {profile.verifyUserInfo.preferred_username && (
+            <p><strong>Preferred Username:</strong> {profile.verifyUserInfo.preferred_username}</p>
+          )}
+          {profile.verifyUserInfo.email_verified !== undefined && (
+            <p><strong>Email Verified:</strong> {profile.verifyUserInfo.email_verified ? 'Yes' : 'No'}</p>
+          )}
+        </div>
+      )}
 
       <div className="checkout-section" style={{ marginTop: 16 }}>
         <label className="field-label">

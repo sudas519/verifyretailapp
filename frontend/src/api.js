@@ -29,7 +29,7 @@ export async function logout() {
   // frontend will still clear local token/session.
   try {
     const res = await api.post("/auth/logout");
-    return res.data;
+    return res.data; // Returns { message, verifyLogoutUrl }
   } catch (err) {
     // Let caller decide how to handle or ignore
     throw err;

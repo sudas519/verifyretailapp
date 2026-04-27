@@ -24,20 +24,27 @@ function AuthCallback() {
           // Decode JWT to get user info (without verification - backend already verified)
           const payload = JSON.parse(atob(token.split('.')[1]));
           
+          console.log('[AuthCallback] JWT payload:', payload);
+          
           const user = {
             id: payload.userId,
-            username: payload.username,
-            is_admin: payload.is_admin || false
+            username: payload.displayName || payload.username, // Use displayName for display
+            is_admin: payload.is_admin || false,
+            email: payload.email,
+            auth_method: payload.auth_method,
+            verifyUserInfo: payload.verifyUserInfo
           };
+          
+          console.log('[AuthCallback] User object to store:', user);
           
           // Store user info
           localStorage.setItem('authUser', JSON.stringify(user));
           
           setStatus('success');
           
-          // Redirect to home page after short delay
+          // Redirect to home page after short delay with page reload to update App state
           setTimeout(() => {
-            navigate('/');
+            window.location.href = '/';
           }, 1000);
         } catch (err) {
           console.error('Error processing token:', err);

@@ -486,18 +486,29 @@ function App() {
     );
   }
 
-  // NEW: call backend /auth/logout, then clear client state
+  // NEW: call backend /auth/logout, then clear client state and redirect to Verify logout
   async function handleLogout() {
+    let verifyLogoutUrl = null;
+    
     try {
-      await apiLogout();
+      const response = await apiLogout();
+      verifyLogoutUrl = response.verifyLogoutUrl;
     } catch (err) {
       console.error("Logout API failed (will still clear client state):", err);
     } finally {
       localStorage.removeItem("authToken");
       localStorage.removeItem("authUser");
       setUser(null);
-      navigate("/login");
-      showToast("Logged out", "info");
+      
+      // If we have a Verify logout URL, redirect to it
+      if (verifyLogoutUrl) {
+        console.log("Redirecting to IBM Verify logout:", verifyLogoutUrl);
+        window.location.href = verifyLogoutUrl;
+      } else {
+        // Otherwise, just navigate to login page
+        navigate("/login");
+        showToast("Logged out", "info");
+      }
     }
   }
 

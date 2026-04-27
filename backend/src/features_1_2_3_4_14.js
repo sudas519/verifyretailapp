@@ -10,6 +10,40 @@ const NodeCache = require("node-cache");
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "changeme-in-prod";
 
+// Helper function to refresh IBM Verify access token
+async function refreshIBMVerifyToken(refreshToken) {
+  try {
+    const IBM_VERIFY_ISSUER = process.env.IBM_VERIFY_ISSUER;
+    const IBM_VERIFY_CLIENT_ID = process.env.IBM_VERIFY_CLIENT_ID;
+    const IBM_VERIFY_CLIENT_SECRET = process.env.IBM_VERIFY_CLIENT_SECRET;
+    
+    const tokenUrl = `${IBM_VERIFY_ISSUER}/token`;
+    
+    const params = new URLSearchParams();
+    params.append('grant_type', 'refresh_token');
+    params.append('refresh_token', refreshToken);
+    params.append('client_id', IBM_VERIFY_CLIENT_ID);
+    params.append('client_secret', IBM_VERIFY_CLIENT_SECRET);
+    
+    const response = await axios.post(tokenUrl, params, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+    
+    console.log('[IBM VERIFY] Token refreshed successfully');
+    console.log('[IBM VERIFY] New access token format:', response.data.access_token ? (response.data.access_token.split('.').length === 3 ? 'JWT' : 'Opaque') : 'none');
+    
+    return {
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token || refreshToken
+    };
+  } catch (error) {
+    console.error('[IBM VERIFY] Error refreshing token:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
 // RAG Retrieval Server Configuration
 const RAG_RETRIEVAL_URL = process.env.RAG_RETRIEVAL_URL || "http://localhost:8080";
 const RAG_BEARER_TOKEN = process.env.RAG_BEARER_TOKEN || "";
@@ -71,7 +105,11 @@ function authMiddleware(req, res, next) {
     req.user = {
       id: payload.userId,
       username: payload.username,
-      is_admin: payload.is_admin || false
+      is_admin: payload.is_admin || false,
+      email: payload.email,
+      auth_method: payload.auth_method,
+      accessToken: payload.accessToken,
+      verifyUserInfo: payload.verifyUserInfo
     };
     next();
   } catch (err) {
@@ -265,6 +303,22 @@ router.get("/orders/advanced/export", authMiddleware, async (req, res) => {
 
 router.get("/me", authMiddleware, async (req, res) => {
   try {
+    // Check if user is authenticated via IBM Verify
+    if (req.user.auth_method === 'ibm_verify') {
+      // IBM Verify users are not in the database, return JWT token data + IBM Verify user info
+      return res.json({
+        id: req.user.id,
+        username: req.user.username,
+        email: req.user.email,
+        is_admin: req.user.is_admin || false,
+        auth_method: 'ibm_verify',
+        created_at: null, // IBM Verify users don't have a created_at in our DB
+        default_address: null, // IBM Verify users don't have saved addresses yet
+        verifyUserInfo: req.user.verifyUserInfo || {} // Additional data from IBM Verify /userinfo endpoint
+      });
+    }
+
+    // For database users (local auth), query the database
     const result = await db.query(
       "SELECT id, username, default_address, is_admin, created_at FROM users WHERE id = $1",
       [req.user.id]
@@ -272,7 +326,14 @@ router.get("/me", authMiddleware, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json(result.rows[0]);
+    
+    // Add auth_method to response for consistency
+    const userData = {
+      ...result.rows[0],
+      auth_method: 'local'
+    };
+    
+    res.json(userData);
   } catch (err) {
     console.error("Get profile error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -281,7 +342,121 @@ router.get("/me", authMiddleware, async (req, res) => {
 
 router.put("/me/address", authMiddleware, async (req, res) => {
   const { defaultAddress } = req.body || {};
+  
   try {
+    // Check if user is authenticated via IBM Verify
+    if (req.user.auth_method === 'ibm_verify') {
+      // For IBM Verify users, update the address via IBM Verify SCIM /Me endpoint (self-service)
+      const axios = require('axios');
+      const IBM_VERIFY_ISSUER = process.env.IBM_VERIFY_ISSUER;
+      let accessToken = req.user.accessToken;
+      
+      if (!accessToken) {
+        return res.status(400).json({ message: "Access token not available for IBM Verify user" });
+      }
+      
+      // Check if access token is in JWT format (required for SCIM API)
+      const isJWT = accessToken.split('.').length === 3;
+      console.log('[IBM VERIFY] Access token format:', isJWT ? 'JWT' : 'Opaque');
+      
+      // If token is not JWT and we have a refresh token, try to get a JWT token
+      if (!isJWT && req.user.refreshToken) {
+        console.log('[IBM VERIFY] Access token is not JWT, attempting to refresh...');
+        try {
+          const tokens = await refreshIBMVerifyToken(req.user.refreshToken);
+          accessToken = tokens.accessToken;
+          console.log('[IBM VERIFY] Token refreshed, new format:', accessToken.split('.').length === 3 ? 'JWT' : 'Opaque');
+        } catch (refreshError) {
+          console.error('[IBM VERIFY] Failed to refresh token:', refreshError.message);
+          return res.status(401).json({
+            message: "Access token expired and refresh failed. Please log in again.",
+            error: refreshError.message
+          });
+        }
+      }
+      
+      try {
+        // Get tenant URL from issuer
+        const tenantUrl = IBM_VERIFY_ISSUER.replace('/oidc/endpoint/default', '');
+        
+        // First, get current user data to preserve all fields
+        const currentUser = await axios.get(
+          `${tenantUrl}/v2.0/Me`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/scim+json'
+            }
+          }
+        );
+        
+        console.log('[IBM VERIFY] Current user data retrieved');
+        
+        // Prepare SCIM update payload with all required fields using OOB attributes only
+        const scimPayload = {
+          schemas: [
+            'urn:ietf:params:scim:schemas:core:2.0:User'
+          ],
+          id: req.user.id,
+          userName: currentUser.data.userName || req.user.email,
+          name: currentUser.data.name || {
+            givenName: req.user.displayName || '',
+            familyName: '',
+            formatted: req.user.displayName || ''
+          },
+          emails: currentUser.data.emails || [{ value: req.user.email, type: 'work' }],
+          active: true,
+          // Update addresses using standard SCIM addresses field
+          addresses: [
+            {
+              type: 'work',
+              streetAddress: defaultAddress || '',
+              formatted: defaultAddress || ''
+            }
+          ]
+        };
+        
+        // Preserve phone numbers if they exist
+        if (currentUser.data.phoneNumbers) {
+          scimPayload.phoneNumbers = currentUser.data.phoneNumbers;
+        }
+        
+        // Preserve IBM extension data if it exists (but don't modify it)
+        if (currentUser.data['urn:ietf:params:scim:schemas:extension:ibm:2.0:User']) {
+          scimPayload.schemas.push('urn:ietf:params:scim:schemas:extension:ibm:2.0:User');
+          scimPayload['urn:ietf:params:scim:schemas:extension:ibm:2.0:User'] =
+            currentUser.data['urn:ietf:params:scim:schemas:extension:ibm:2.0:User'];
+        }
+        
+        console.log('[IBM VERIFY] Updating address via /Me endpoint (PUT) for user:', req.user.id);
+        console.log('[IBM VERIFY] Address value:', defaultAddress);
+        
+        // Make PUT request to IBM Verify SCIM /Me endpoint (self-service)
+        const response = await axios.put(
+          `${tenantUrl}/v2.0/Me`,
+          scimPayload,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/scim+json',
+              'Accept': 'application/scim+json'
+            }
+          }
+        );
+        
+        console.log('[IBM VERIFY] Address updated successfully in IBM Verify');
+        return res.json({ message: "Address updated in IBM Verify" });
+        
+      } catch (verifyErr) {
+        console.error('[IBM VERIFY] Error updating address:', verifyErr.response?.data || verifyErr.message);
+        return res.status(500).json({
+          message: "Unable to update address in IBM Verify",
+          error: verifyErr.response?.data?.messageDescription || verifyErr.message
+        });
+      }
+    }
+    
+    // For database users (local auth), update in database
     await db.query(
       "UPDATE users SET default_address = $1 WHERE id = $2",
       [defaultAddress || null, req.user.id]
